@@ -412,9 +412,7 @@
             citationsHtml += '</div>';
         }
 
-        // Parse inline @mentions and add citation chips for any unmatched ones
-        const text = escHtml(turn.text).replace(/@([一-龥\w\-_]+)/g,
-            '<span style="color:#0e67d0;font-weight:600;">@$1</span>');
+        const text = renderText(turn.text);
 
         card.innerHTML = `
             <div class="turn-header">
@@ -439,6 +437,13 @@
     function reset(enableBtn = true) {
         if (enableBtn) document.getElementById('startBtn').disabled = false;
         document.getElementById('controlBar').classList.remove('visible');
+    }
+
+    function renderText(str) {
+        return escHtml(str)
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/@([一-龥\w\-·]+)/g, '<span style="color:#0e67d0;font-weight:600;">@$1</span>')
+            .replace(/\n/g, '<br>');
     }
 
     function escHtml(str) {
