@@ -14,7 +14,7 @@ ENV APP_NAME=${PARAM_APP_NAME}
 RUN echo ${APP_NAME}
 #RUN echo ${ENVIRONMENT}
 
-ADD ./${APP_NAME}-starter/target/${APP_NAME}-1.0.0-SNAPSHOT.jar /app/${APP_NAME}.jar
+ADD ./${APP_NAME}/target/${APP_NAME}-1.0.0-SNAPSHOT.jar /app/${APP_NAME}.jar
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ EXPOSE 8080
 
 # 生成 entrypoint.sh 脚本
 RUN echo '#!/bin/sh' > /entrypoint.sh && \
-    echo 'exec java -Dspring.profiles.active=$ENVIRONMENT -jar ${APP_NAME}-starter.jar' >> /entrypoint.sh && \
+    echo 'exec java -Dspring.profiles.active=$ENVIRONMENT -jar ${APP_NAME}.jar' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
