@@ -75,10 +75,11 @@ public class ZhihuApiRealService implements ZhihuApiService {
 
         // Fetch from API — cache all results, limit only on return
         Map<String, Answer> byId = new LinkedHashMap<>();
-        fetchSearch(topic, 10).forEach(a -> byId.put(a.getId(), a));
-        if (byId.size() < limit) {
-            fetchSearch(topic + " 观点 看法", 10).forEach(a -> byId.putIfAbsent(a.getId(), a));
-        }
+        fetchSearch(topic, limit).forEach(a -> byId.put(a.getId(), a));
+//        fetchSearch(topic, 10).forEach(a -> byId.put(a.getId(), a));
+//        if (byId.size() < limit) {
+//            fetchSearch(topic + " 观点 看法", 10).forEach(a -> byId.putIfAbsent(a.getId(), a));
+//        }
 
         List<Answer> answers = byId.values().stream()
             .sorted(Comparator.comparingInt(Answer::getUpvotes).reversed())
