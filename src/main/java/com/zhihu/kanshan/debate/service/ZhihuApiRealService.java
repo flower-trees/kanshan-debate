@@ -153,11 +153,62 @@ public class ZhihuApiRealService implements ZhihuApiService {
         }
     }
 
+    private static final String ZHIDA_URL = "https://developer.zhihu.com/v1/chat/completions";
+
     @Override
     public String callZhidaAgent(String topic, String debateContext) {
-        // Zhida Agent API not yet wired — fallback to local summary via LLM
-        // TODO: replace with real Zhida Agent call when endpoint is available
-        return null; // null signals caller to use local Qwen fallback
+        try {
+            String prompt = String.format(
+                "请对知乎圆桌辩论「%s」做多视角综述（200字以内）。\n\n辩论精华：\n%s\n\n要求：\n"
+                + "1. 客观呈现各方最有力的论点\n2. 指出分歧的核心所在\n"
+                + "3. 给读者一个思考框架，而不是结论\n4. 结尾提示「各论点均来自知乎真实答主」",
+                topic, debateContext
+            );
+
+            JsonObject msg = new JsonObject();
+            msg.addProperty("role", "user");
+            msg.addProperty("content", prompt);
+            JsonArray messages = new JsonArray();
+            messages.add(msg);
+
+            JsonObject reqBody = new JsonObject();
+            reqBody.addProperty("model", "zhida-thinking-1p5");
+            reqBody.addProperty("stream", false);
+            reqBody.add("messages", messages);
+
+            okhttp3.RequestBody body = okhttp3.RequestBody.create(
+                gson.toJson(reqBody),
+                okhttp3.MediaType.get("application/json; charset=utf-8")
+            );
+
+            Request req = new Request.Builder()
+                .url(ZHIDA_URL)
+                .header("Authorization", "Bearer " + accessSecret)
+                .header("X-Request-Timestamp", String.valueOf(System.currentTimeMillis() / 1000))
+                .post(body)
+                .build();
+
+            try (Response resp = http.newCall(req).execute()) {
+                if (!resp.isSuccessful()) {
+                    log.warn("Zhida API error: HTTP {}", resp.code());
+                    return null;
+                }
+                JsonObject root = gson.fromJson(resp.body().string(), JsonObject.class);
+                if (root.has("error")) {
+                    log.warn("Zhida API error: {}", root.getAsJsonObject("error").get("message").getAsString());
+                    return null;
+                }
+                String content = root.getAsJsonArray("choices")
+                    .get(0).getAsJsonObject()
+                    .getAsJsonObject("message")
+                    .get("content").getAsString();
+                log.info("Zhida summary received: {} chars", content.length());
+                return content;
+            }
+        } catch (Exception e) {
+            log.warn("Zhida API call failed, falling back to local Qwen: {}", e.getMessage());
+            return null;
+        }
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────

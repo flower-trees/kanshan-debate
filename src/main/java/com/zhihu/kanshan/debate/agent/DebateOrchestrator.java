@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.zhihu.kanshan.debate.model.Answer;
+import com.zhihu.kanshan.debate.service.ZhihuApiService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,6 +48,7 @@ import java.util.stream.Collectors;
 public class DebateOrchestrator {
 
     private final ChainActor chainActor;
+    private final ZhihuApiService zhihuApiService;
 
     @Value("${debate.max-rounds:3}")
     private int maxRounds;
@@ -58,6 +60,9 @@ public class DebateOrchestrator {
 
         // Build per-stance vector stores for evidence RAG
         Map<String, VectorStore> vectorStores = buildVectorStores(stances);
+
+        // Collect non-host turns for Zhida summary context
+        List<DebateTurn> speechTurns = new ArrayList<>();
 
         // Global author→answer map for cross-stance citation matching
         Map<String, Answer> allAnswers = stances.stream()
@@ -75,21 +80,22 @@ public class DebateOrchestrator {
         log.info("Phase 1: opening statements ({} debaters)", stances.size());
         onTurn.accept(hostTurn("📢 **第一阶段：开场陈述**"));
 
+        // Helper: emit a speech turn and collect it for Zhida summary context
+        Consumer<DebateTurn> emitSpeech = turn -> { speechTurns.add(turn); onTurn.accept(turn); };
+
         for (StanceGroup stance : stances) {
             if (stopSignal.isStopped()) return;
 
             String openingText = generateSpeech(topic, stance, null, vectorStores.get(stance.getId()),
                 SpeechType.OPENING, null);
-            List<Citation> citations = buildCitations(openingText, allAnswers);
-
-            onTurn.accept(DebateTurn.builder()
+            emitSpeech.accept(DebateTurn.builder()
                 .id(UUID.randomUUID().toString())
                 .type(DebateTurn.Type.OPENING)
                 .debaterName(stance.getLabel())
                 .stanceId(stance.getId())
                 .emoji(stance.getEmoji())
                 .text(openingText)
-                .citations(citations)
+                .citations(buildCitations(openingText, allAnswers))
                 .timestamp(System.currentTimeMillis())
                 .build());
         }
@@ -110,10 +116,9 @@ public class DebateOrchestrator {
 
             if (stopSignal.isStopped()) return;
 
-            // Challenger attacks
             String challengeText = generateSpeech(topic, challenger, target, vectorStores.get(challenger.getId()),
                 SpeechType.CHALLENGE, null);
-            onTurn.accept(DebateTurn.builder()
+            emitSpeech.accept(DebateTurn.builder()
                 .id(UUID.randomUUID().toString())
                 .type(DebateTurn.Type.CROSS)
                 .debaterName(challenger.getLabel())
@@ -126,10 +131,9 @@ public class DebateOrchestrator {
 
             if (stopSignal.isStopped()) return;
 
-            // Target defends
             String defenseText = generateSpeech(topic, target, challenger, vectorStores.get(target.getId()),
                 SpeechType.DEFENSE, challengeText);
-            onTurn.accept(DebateTurn.builder()
+            emitSpeech.accept(DebateTurn.builder()
                 .id(UUID.randomUUID().toString())
                 .type(DebateTurn.Type.CROSS)
                 .debaterName(target.getLabel())
@@ -143,9 +147,9 @@ public class DebateOrchestrator {
 
         // ── Phase 3: Summary ─────────────────────────────────────────────────
         if (!stopSignal.isStopped()) {
-            log.info("Phase 3: generating summary");
+            log.info("Phase 3: generating summary via Zhida (fallback: Qwen)");
             onTurn.accept(hostTurn("📋 **总结阶段**：综合各方观点"));
-            String summary = generateSummary(topic, stances);
+            String summary = generateSummary(topic, stances, speechTurns);
             onTurn.accept(DebateTurn.builder()
                 .id(UUID.randomUUID().toString())
                 .type(DebateTurn.Type.SUMMARY)
@@ -253,10 +257,20 @@ public class DebateOrchestrator {
         };
     }
 
-    private String generateSummary(String topic, List<StanceGroup> stances) {
+    private String generateSummary(String topic, List<StanceGroup> stances, List<DebateTurn> speechTurns) {
+        // Try Zhida first (deep-thinking model, 100/day limit)
+        String debateContext = buildDebateContext(speechTurns);
+        String zhidaResult = zhihuApiService.callZhidaAgent(topic, debateContext);
+        if (zhidaResult != null) {
+            log.info("Summary from Zhida: {} chars", zhidaResult.length());
+            return zhidaResult;
+        }
+
+        // Fallback: local Qwen
+        log.info("Zhida unavailable, generating summary with local Qwen");
         StringBuilder stanceSummary = new StringBuilder();
         for (StanceGroup s : stances) {
-            stanceSummary.append("- **").append(s.getEmoji()).append(" ").append(s.getLabel()).append("**：")
+            stanceSummary.append("- ").append(s.getEmoji()).append(" **").append(s.getLabel()).append("**：")
                 .append(s.getDescription()).append("\n");
         }
 
@@ -282,6 +296,18 @@ public class DebateOrchestrator {
             "stances", stanceSummary.toString()
         ));
         return result.getText();
+    }
+
+    private String buildDebateContext(List<DebateTurn> turns) {
+        StringBuilder sb = new StringBuilder();
+        for (DebateTurn turn : turns) {
+            sb.append(turn.getEmoji()).append(" **").append(turn.getDebaterName()).append("**（")
+              .append(turn.getType().name().toLowerCase()).append("）：\n");
+            String text = turn.getText();
+            sb.append(text.length() > 150 ? text.substring(0, 150) + "…" : text);
+            sb.append("\n\n");
+        }
+        return sb.toString();
     }
 
     // ── Vector store setup ────────────────────────────────────────────────────
