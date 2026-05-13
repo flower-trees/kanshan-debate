@@ -99,4 +99,10 @@ public class DebateController {
         sessionService.stopDebate(sessionId);
         return ResponseEntity.ok(Map.of("status", "stop signal sent"));
     }
+
+    @GetMapping("/health")
+    @ResponseBody
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("ok");
+    }
 }
