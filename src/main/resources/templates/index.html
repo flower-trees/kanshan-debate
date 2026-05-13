@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>知乎圆桌辩论 · 看山</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #f6f6f6;
+            color: #1a1a1a;
+            min-height: 100vh;
+        }
+
+        /* ── Header ── */
+        .header {
+            background: #0e67d0;
+            color: white;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.2);
+        }
+        .header h1 { font-size: 20px; font-weight: 700; }
+        .header .sub { font-size: 13px; opacity: .8; margin-top: 2px; }
+
+        /* ── Layout ── */
+        .container { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
+
+        /* ── Input card ── */
+        .input-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08);
+            margin-bottom: 20px;
+        }
+        .input-row { display: flex; gap: 10px; }
+        .topic-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1.5px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            transition: border .2s;
+        }
+        .topic-input:focus { border-color: #0e67d0; }
+        .btn-start {
+            padding: 12px 24px;
+            background: #0e67d0;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background .2s;
+        }
+        .btn-start:hover { background: #0b56b0; }
+        .btn-start:disabled { background: #aaa; cursor: not-allowed; }
+
+        .hot-topics { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .hot-tag {
+            padding: 4px 12px;
+            background: #f0f4ff;
+            color: #0e67d0;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #d0dff8;
+            transition: background .15s;
+        }
+        .hot-tag:hover { background: #dce9ff; }
+        .hot-tag-extra { display: none; }
+        .btn-more-topics {
+            padding: 4px 10px;
+            background: none;
+            color: #888;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color .15s, border-color .15s;
+        }
+        .btn-more-topics:hover { color: #0e67d0; border-color: #0e67d0; }
+
+        /* ── Stances ── */
+        .stances-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .stance-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            color: white;
+        }
+        .stance-0 { background: #1a73e8; }
+        .stance-1 { background: #d93025; }
+        .stance-2 { background: #f9a825; color: #333; }
+        .stance-3 { background: #1e8e3e; }
+
+        /* ── Status banner ── */
+        .status-banner {
+            display: none;
+            padding: 10px 16px;
+            background: #fff8e1;
+            border: 1px solid #ffd54f;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #6d4c00;
+            margin-bottom: 12px;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-banner.visible { display: flex; }
+        .spinner {
+            width: 14px; height: 14px;
+            border: 2px solid #f9a825;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Debate feed ── */
+        .debate-feed { display: flex; flex-direction: column; gap: 12px; }
+
+        .turn-card {
+            background: white;
+            border-radius: 10px;
+            padding: 16px 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.07);
+            border-left: 4px solid #ddd;
+            animation: slideIn .3s ease;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .turn-host { border-left-color: #0e67d0; background: #f8fbff; }
+        .turn-opening { border-left-color: #43a047; }
+        .turn-cross { border-left-color: #fb8c00; }
+        .turn-summary { border-left-color: #8e24aa; background: #fdf8ff; }
+
+        .turn-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .debater-name { font-weight: 700; font-size: 14px; }
+        .turn-type-badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #eee;
+            color: #555;
+        }
+        .turn-text {
+            font-size: 14px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        /* ── Citations ── */
+        .citations { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+        .citation-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            background: #f0f4ff;
+            border: 1px solid #c5d8ff;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #0e67d0;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background .15s;
+        }
+        .citation-chip:hover { background: #dce9ff; }
+
+        /* ── Control bar ── */
+        .control-bar {
+            position: sticky;
+            bottom: 16px;
+            display: none;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .control-bar.visible { display: flex; }
+        .btn-stop {
+            padding: 10px 22px;
+            background: #d93025;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-stop:hover { background: #b31412; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>🗣️ 知乎圆桌辩论</h1>
+        <div class="sub">每个观点，都有出处 · 每场辩论，都是知乎真实声音</div>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- Input -->
+    <div class="input-card">
+        <div class="input-row">
+            <input id="topicInput" class="topic-input"
+                   type="text" placeholder="输入一个争议话题，例如：30岁该不该转行"
+                   maxlength="100"/>
+            <button id="startBtn" class="btn-start" onclick="startDebate()">开始辩论</button>
+        </div>
+        <div class="hot-topics" id="hotTopicsBar">
+            <span style="font-size:13px;color:#888;white-space:nowrap;">热门：</span>
+            <span th:each="t,iter : ${hotTopics}"
+                  th:text="${t}"
+                  th:class="${iter.index < 5} ? 'hot-tag' : 'hot-tag hot-tag-extra'"
+                  onclick="fillTopic(this.textContent)"></span>
+            <button th:if="${#lists.size(hotTopics) > 5}"
+                    id="btnMoreTopics" class="btn-more-topics"
+                    onclick="toggleMoreTopics()">查看更多</button>
+        </div>
+    </div>
+
+    <!-- Status -->
+    <div id="statusBanner" class="status-banner">
+        <div class="spinner"></div>
+        <span id="statusText">正在准备...</span>
+    </div>
+
+    <!-- Stances -->
+    <div id="stancesBar" class="stances-bar"></div>
+
+    <!-- Feed -->
+    <div id="debateFeed" class="debate-feed"></div>
+
+    <!-- Controls -->
+    <div id="controlBar" class="control-bar">
+        <button class="btn-stop" onclick="stopDebate()">⏹ 暂停辩论</button>
+    </div>
+</div>
+
+<script>
+    let currentSessionId = null;
+    let eventSource = null;
+
+    function fillTopic(text) {
+        document.getElementById('topicInput').value = text;
+        document.getElementById('startBtn').disabled = false;
+        if (eventSource) { eventSource.close(); eventSource = null; }
+        setStatus(false, '');
+    }
+
+    function toggleMoreTopics() {
+        const extras = document.querySelectorAll('.hot-tag-extra');
+        const btn = document.getElementById('btnMoreTopics');
+        const expanded = btn.textContent === '收起';
+        extras.forEach(el => el.style.display = expanded ? 'none' : 'inline-block');
+        btn.textContent = expanded ? '查看更多' : '收起';
+    }
+
+    async function startDebate() {
+        const topic = document.getElementById('topicInput').value.trim();
+        if (!topic) { alert('请输入辩题'); return; }
+
+        // Reset UI
+        document.getElementById('debateFeed').innerHTML = '';
+        document.getElementById('stancesBar').innerHTML = '';
+        setStatus(true, '正在分析知乎答案...');
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('controlBar').classList.remove('visible');
+
+        if (eventSource) { eventSource.close(); eventSource = null; }
+
+        try {
+            const resp = await fetch('/api/debate/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic })
+            });
+            const data = await resp.json();
+            if (data.error) { alert(data.error); reset(); return; }
+
+            currentSessionId = data.sessionId;
+            subscribeEvents(data.sessionId);
+            document.getElementById('controlBar').classList.add('visible');
+        } catch (e) {
+            alert('启动失败：' + e.message);
+            reset();
+        }
+    }
+
+    function subscribeEvents(sessionId) {
+        eventSource = new EventSource(`/api/debate/${sessionId}/events`);
+
+        eventSource.addEventListener('status', e => {
+            const d = JSON.parse(e.data);
+            const statusMap = {
+                CLUSTERING: '正在聚类立场...',
+                DEBATING: '辩论进行中...',
+                COMPLETED: '辩论完成！',
+                ERROR: '辩论出现错误'
+            };
+            setStatus(d.status !== 'COMPLETED' && d.status !== 'ERROR',
+                      statusMap[d.status] || d.message);
+            if (d.status === 'COMPLETED' || d.status === 'ERROR') {
+                reset(false);
+                if (eventSource) { eventSource.close(); eventSource = null; }
+            }
+        });
+
+        eventSource.addEventListener('stances', e => {
+            const stances = JSON.parse(e.data);
+            renderStances(stances);
+        });
+
+        eventSource.addEventListener('turn', e => {
+            const turn = JSON.parse(e.data);
+            renderTurn(turn);
+        });
+
+        eventSource.addEventListener('error', e => {
+            try {
+                const d = JSON.parse(e.data);
+                setStatus(false, '❌ ' + d.message);
+            } catch (_) {}
+            reset(false);
+        });
+
+        eventSource.onerror = () => {
+            if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+                setStatus(false, '连接断开');
+                reset(false);
+            }
+        };
+    }
+
+    async function stopDebate() {
+        if (!currentSessionId) return;
+        await fetch(`/api/debate/${currentSessionId}/stop`, { method: 'POST' });
+        setStatus(false, '已发送暂停信号');
+        document.getElementById('controlBar').classList.remove('visible');
+    }
+
+    function renderStances(stances) {
+        const bar = document.getElementById('stancesBar');
+        bar.innerHTML = '';
+        stances.forEach((s, i) => {
+            const pill = document.createElement('div');
+            pill.className = `stance-pill stance-${i}`;
+            pill.innerHTML = `${s.emoji} ${s.label}`;
+            pill.title = s.description || '';
+            bar.appendChild(pill);
+        });
+    }
+
+    function renderTurn(turn) {
+        const feed = document.getElementById('debateFeed');
+        const card = document.createElement('div');
+
+        const typeClass = {
+            HOST: 'turn-host',
+            OPENING: 'turn-opening',
+            CROSS: 'turn-cross',
+            SUMMARY: 'turn-summary'
+        }[turn.type] || '';
+
+        const typeBadge = {
+            HOST: '主持',
+            OPENING: '开场',
+            CROSS: '质询',
+            SUMMARY: '综述'
+        }[turn.type] || '';
+
+        card.className = `turn-card ${typeClass}`;
+
+        let citationsHtml = '';
+        if (turn.citations && turn.citations.length > 0) {
+            citationsHtml = '<div class="citations">';
+            turn.citations.forEach(c => {
+                citationsHtml += `<a class="citation-chip" href="${c.answerUrl}" target="_blank"
+                    title="${escHtml(c.snippet)}">
+                    📎 @${escHtml(c.authorName)} · ${c.upvotes}赞
+                </a>`;
+            });
+            citationsHtml += '</div>';
+        }
+
+        // Parse inline @mentions and add citation chips for any unmatched ones
+        const text = escHtml(turn.text).replace(/@([一-龥\w\-_]+)/g,
+            '<span style="color:#0e67d0;font-weight:600;">@$1</span>');
+
+        card.innerHTML = `
+            <div class="turn-header">
+                <span style="font-size:20px">${escHtml(turn.emoji || '')}</span>
+                <span class="debater-name">${escHtml(turn.debaterName)}</span>
+                <span class="turn-type-badge">${typeBadge}</span>
+            </div>
+            <div class="turn-text">${text}</div>
+            ${citationsHtml}
+        `;
+
+        feed.appendChild(card);
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function setStatus(visible, text) {
+        const banner = document.getElementById('statusBanner');
+        document.getElementById('statusText').textContent = text;
+        banner.classList.toggle('visible', visible);
+    }
+
+    function reset(enableBtn = true) {
+        if (enableBtn) document.getElementById('startBtn').disabled = false;
+        document.getElementById('controlBar').classList.remove('visible');
+    }
+
+    function escHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    }
+
+    // Allow Enter key to start
+    document.getElementById('topicInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') startDebate();
+    });
+</script>
+</body>
+</html>

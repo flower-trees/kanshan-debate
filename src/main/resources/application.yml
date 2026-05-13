@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: kanshan-debate
+  datasource:
+    url: jdbc:sqlite:src/main/resources/db/debate.db?journal_mode=WAL&busy_timeout=5000
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 5
+      connection-timeout: 10000
+  jpa:
+    open-in-view: false      # 禁止 EntityManager 跨请求持有连接
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+  thymeleaf:
+    cache: false
+
+# j-langchain LLM config — set via env or override here
+ai:
+  aliyun:
+    key: ${ALIYUN_KEY:}
+
+zhihu:
+  secret: ${ZHIHU_SECRET:}   # set env ZHIHU_SECRET to activate real API; empty = mock mode
+
+debate:
+  max-rounds: 3        # cross-examination rounds per debate
+  cache-enabled: true  # skip re-generating if topic already debated
+  hot-cache-dir: src/main/resources/cache  # daily hot-topics cache directory
