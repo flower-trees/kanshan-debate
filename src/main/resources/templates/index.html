@@ -156,6 +156,14 @@
         .turn-cross { border-left-color: #fb8c00; }
         .turn-summary { border-left-color: #8e24aa; background: #fdf8ff; }
 
+        .typing-cursor {
+            display: inline-block;
+            color: #8e24aa;
+            font-weight: 700;
+            animation: blink .7s step-end infinite;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
         .turn-header {
             display: flex;
             align-items: center;
@@ -269,6 +277,8 @@
 <script>
     let currentSessionId = null;
     let eventSource = null;
+    let summaryStreamCard = null;
+    let summaryStreamText = '';
 
     function fillTopic(text) {
         document.getElementById('topicInput').value = text;
@@ -292,6 +302,8 @@
         // Reset UI
         document.getElementById('debateFeed').innerHTML = '';
         document.getElementById('stancesBar').innerHTML = '';
+        summaryStreamCard = null;
+        summaryStreamText = '';
         setStatus(true, '正在分析知乎答案...');
         document.getElementById('startBtn').disabled = true;
         document.getElementById('controlBar').classList.remove('visible');
@@ -345,6 +357,18 @@
             renderTurn(turn);
         });
 
+        eventSource.addEventListener('summaryToken', e => {
+            const data = JSON.parse(e.data);
+            summaryStreamText += data.token;
+            if (!summaryStreamCard) {
+                summaryStreamCard = createSummaryStreamCard();
+                document.getElementById('debateFeed').appendChild(summaryStreamCard);
+            }
+            summaryStreamCard.querySelector('.turn-text').innerHTML =
+                renderText(summaryStreamText) + '<span class="typing-cursor">|</span>';
+            summaryStreamCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+
         eventSource.addEventListener('error', e => {
             try {
                 const d = JSON.parse(e.data);
@@ -380,7 +404,29 @@
         });
     }
 
+    function createSummaryStreamCard() {
+        const card = document.createElement('div');
+        card.id = 'summary-stream-card';
+        card.className = 'turn-card turn-summary';
+        card.innerHTML = `
+            <div class="turn-header">
+                <span style="font-size:20px">📊</span>
+                <span class="debater-name">综合视角</span>
+                <span class="turn-type-badge">综述（生成中...）</span>
+            </div>
+            <div class="turn-text"></div>
+        `;
+        return card;
+    }
+
     function renderTurn(turn) {
+        // When final SUMMARY arrives, remove the streaming placeholder card
+        if (turn.type === 'SUMMARY' && summaryStreamCard) {
+            summaryStreamCard.remove();
+            summaryStreamCard = null;
+            summaryStreamText = '';
+        }
+
         const feed = document.getElementById('debateFeed');
         const card = document.createElement('div');
 

@@ -104,6 +104,7 @@ public class DebateSessionService {
                     turns.add(turn);
                     emitEvent(sessionId, "turn", turn);
                 },
+                token -> emitEvent(sessionId, "summaryToken", Map.of("token", token)),
                 stopped::get
             );
 

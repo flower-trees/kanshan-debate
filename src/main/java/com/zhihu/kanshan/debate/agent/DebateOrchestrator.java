@@ -1,17 +1,17 @@
 package com.zhihu.kanshan.debate.agent;
 
+import com.zhihu.kanshan.debate.llm.ChatZhida;
 import com.zhihu.kanshan.debate.model.Citation;
 import com.zhihu.kanshan.debate.model.DebateTurn;
 import com.zhihu.kanshan.debate.model.StanceGroup;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.salt.function.flow.FlowInstance;
-import org.salt.function.flow.context.ContextBus;
 import org.salt.jlangchain.core.ChainActor;
-import org.salt.jlangchain.core.handler.TranslateHandler;
 import org.salt.jlangchain.core.llm.aliyun.ChatAliyun;
 import org.salt.jlangchain.core.parser.StrOutputParser;
 import org.salt.jlangchain.core.parser.generation.ChatGeneration;
+import org.salt.jlangchain.core.parser.generation.ChatGenerationChunk;
 import org.salt.jlangchain.core.prompt.string.PromptTemplate;
 import org.salt.jlangchain.rag.embedding.AliyunEmbeddings;
 import org.salt.jlangchain.rag.media.Document;
@@ -21,7 +21,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.zhihu.kanshan.debate.model.Answer;
-import com.zhihu.kanshan.debate.service.ZhihuApiService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,13 +47,13 @@ import java.util.stream.Collectors;
 public class DebateOrchestrator {
 
     private final ChainActor chainActor;
-    private final ZhihuApiService zhihuApiService;
 
     @Value("${debate.max-rounds:3}")
     private int maxRounds;
 
     public void runDebate(String topic, List<StanceGroup> stances,
                           Consumer<DebateTurn> onTurn,
+                          Consumer<String> onSummaryToken,
                           StopSignal stopSignal) {
         log.info("Debate start: topic='{}', stances={}, maxRounds={}", topic, stances.size(), maxRounds);
 
@@ -147,9 +146,9 @@ public class DebateOrchestrator {
 
         // ── Phase 3: Summary ─────────────────────────────────────────────────
         if (!stopSignal.isStopped()) {
-            log.info("Phase 3: generating summary via Zhida (fallback: Qwen)");
+            log.info("Phase 3: generating summary via Zhida stream (fallback: Qwen)");
             onTurn.accept(hostTurn("📋 **总结阶段**：综合各方观点"));
-            String summary = generateSummary(topic, stances, speechTurns);
+            String summary = generateSummary(topic, stances, speechTurns, onSummaryToken);
             onTurn.accept(DebateTurn.builder()
                 .id(UUID.randomUUID().toString())
                 .type(DebateTurn.Type.SUMMARY)
@@ -257,17 +256,44 @@ public class DebateOrchestrator {
         };
     }
 
-    private String generateSummary(String topic, List<StanceGroup> stances, List<DebateTurn> speechTurns) {
-        // Try Zhida first (deep-thinking model, 100/day limit)
+    private String generateSummary(String topic, List<StanceGroup> stances,
+                                    List<DebateTurn> speechTurns, Consumer<String> onToken) {
         String debateContext = buildDebateContext(speechTurns);
-        String zhidaResult = zhihuApiService.callZhidaAgent(topic, debateContext);
-        if (zhidaResult != null) {
-            log.info("Summary from Zhida: {} chars", zhidaResult.length());
-            return zhidaResult;
+        String prompt = String.format(
+            "请对知乎圆桌辩论「%s」做多视角综述（200字以内）。\n\n辩论精华：\n%s\n\n要求：\n"
+            + "1. 客观呈现各方最有力的论点\n2. 指出分歧的核心所在\n"
+            + "3. 给读者一个思考框架，而不是结论\n4. 结尾提示「各论点均来自知乎真实答主」",
+            topic, debateContext);
+
+        // Try Zhida streaming (deep-thinking model)
+        try {
+            FlowInstance zhidaChain = chainActor.builder()
+                .next(PromptTemplate.fromTemplate("${prompt}"))
+                .next(ChatZhida.builder().build())
+                .next(new StrOutputParser())
+                .build();
+
+            ChatGenerationChunk chunk = chainActor.stream(zhidaChain, Map.of("prompt", prompt));
+            StringBuilder sb = new StringBuilder();
+            while (chunk.getIterator().hasNext()) {
+                String token = chunk.getIterator().next().getText();
+                if (token != null && !token.isEmpty()) {
+                    sb.append(token);
+                    onToken.accept(token);
+                }
+            }
+            String result = sb.toString();
+            if (!result.isBlank()) {
+                log.info("Summary from Zhida stream: {} chars", result.length());
+                return result;
+            }
+            log.warn("Zhida stream returned empty content, falling back to Qwen");
+        } catch (Exception e) {
+            log.warn("Zhida streaming failed ({}), falling back to Qwen", e.getMessage());
         }
 
-        // Fallback: local Qwen
-        log.info("Zhida unavailable, generating summary with local Qwen");
+        // Fallback: Qwen streaming
+        log.info("Generating summary with Qwen streaming fallback");
         StringBuilder stanceSummary = new StringBuilder();
         for (StanceGroup s : stances) {
             stanceSummary.append("- ").append(s.getEmoji()).append(" **").append(s.getLabel()).append("**：")
@@ -291,11 +317,24 @@ public class DebateOrchestrator {
             .next(new StrOutputParser())
             .build();
 
-        ChatGeneration result = chainActor.invoke(summaryChain, Map.of(
-            "topic", topic,
-            "stances", stanceSummary.toString()
-        ));
-        return result.getText();
+        try {
+            ChatGenerationChunk qwenChunk = chainActor.stream(summaryChain, Map.of(
+                "topic", topic,
+                "stances", stanceSummary.toString()
+            ));
+            StringBuilder qwenSb = new StringBuilder();
+            while (qwenChunk.getIterator().hasNext()) {
+                String token = qwenChunk.getIterator().next().getText();
+                if (token != null && !token.isEmpty()) {
+                    qwenSb.append(token);
+                    onToken.accept(token);
+                }
+            }
+            return qwenSb.toString();
+        } catch (Exception e) {
+            log.error("Qwen streaming failed: {}", e.getMessage());
+            return "（综合视角生成失败，请重试）";
+        }
     }
 
     private String buildDebateContext(List<DebateTurn> turns) {
