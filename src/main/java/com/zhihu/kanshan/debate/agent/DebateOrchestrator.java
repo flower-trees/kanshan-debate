@@ -56,6 +56,10 @@ public class DebateOrchestrator {
                           Consumer<String> onSummaryToken,
                           StopSignal stopSignal) {
         log.info("Debate start: topic='{}', stances={}, maxRounds={}", topic, stances.size(), maxRounds);
+        if (stances.isEmpty()) {
+            log.warn("runDebate called with 0 stances, aborting");
+            return;
+        }
 
         // Build per-stance vector stores for evidence RAG
         Map<String, VectorStore> vectorStores = buildVectorStores(stances);
@@ -171,22 +175,52 @@ public class DebateOrchestrator {
         log.info("Generating speech: debater='{}' type={}", speaker.getLabel(), type);
         long t0 = System.currentTimeMillis();
 
-        // RAG: retrieve relevant evidence from this stance's vector store
         String evidence = retrieveEvidence(vectorStore, topic, type, target);
-
         String prompt = buildDebaterPrompt(topic, speaker, target, evidence, type, priorText);
 
-        FlowInstance speechChain = chainActor.builder()
+        try {
+            return invokeSpeech(prompt, t0, speaker.getLabel(), type);
+        } catch (Exception e) {
+            if (isContentBlocked(e) && !evidence.isBlank()) {
+                // Retry without RAG evidence — may be the original text that triggered inspection
+                log.warn("Speech blocked for '{}' {}, retrying without evidence", speaker.getLabel(), type);
+                String cleanPrompt = buildDebaterPrompt(topic, speaker, target, "", type, priorText);
+                try {
+                    return invokeSpeech(cleanPrompt, t0, speaker.getLabel(), type);
+                } catch (Exception e2) {
+                    log.warn("Speech retry also blocked for '{}' {}", speaker.getLabel(), type);
+                }
+            } else {
+                log.warn("Speech generation failed for '{}' {}: {}", speaker.getLabel(), type, e.getMessage());
+            }
+            return buildFallbackSpeech(speaker);
+        }
+    }
+
+    private String invokeSpeech(String prompt, long t0, String debaterName, SpeechType type) {
+        FlowInstance chain = chainActor.builder()
             .next(PromptTemplate.fromTemplate("${prompt}"))
             .next(ChatAliyun.builder().model("qwen-plus").temperature(0.7f).build())
             .next(new StrOutputParser())
             .build();
-
-        ChatGeneration result = chainActor.invoke(speechChain, Map.of("prompt", prompt));
+        ChatGeneration result = chainActor.invoke(chain, Map.of("prompt", prompt));
         String text = result.getText();
         log.info("Speech done: debater='{}' type={} chars={} elapsed={}ms",
-            speaker.getLabel(), type, text.length(), System.currentTimeMillis() - t0);
+            debaterName, type, text.length(), System.currentTimeMillis() - t0);
         return text;
+    }
+
+    private String buildFallbackSpeech(StanceGroup speaker) {
+        String args = speaker.getKeyArguments() != null && !speaker.getKeyArguments().isEmpty()
+            ? String.join("；", speaker.getKeyArguments())
+            : speaker.getDescription();
+        return String.format("（本轮发言受平台内容审核限制无法展示。%s 核心观点：%s）",
+            speaker.getLabel(), args);
+    }
+
+    private static boolean isContentBlocked(Exception e) {
+        String msg = e.getMessage();
+        return msg != null && msg.contains("400");
     }
 
     private String retrieveEvidence(VectorStore store, String topic, SpeechType type, StanceGroup target) {
@@ -332,9 +366,20 @@ public class DebateOrchestrator {
             }
             return qwenSb.toString();
         } catch (Exception e) {
-            log.error("Qwen streaming failed: {}", e.getMessage());
-            return "（综合视角生成失败，请重试）";
+            log.warn("Qwen streaming failed ({}), using template summary", e.getMessage());
+            return buildTemplateSummary(topic, stances);
         }
+    }
+
+    private String buildTemplateSummary(String topic, List<StanceGroup> stances) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("本次圆桌辩论围绕「").append(topic).append("」展开，知乎答主呈现了以下主要立场：\n\n");
+        for (StanceGroup s : stances) {
+            sb.append(s.getEmoji()).append(" **").append(s.getLabel()).append("**：")
+              .append(s.getDescription()).append("\n");
+        }
+        sb.append("\n各方观点均来自知乎真实答主。核心分歧在于视角与优先级的不同，建议结合自身情况参考多方论据后独立判断。");
+        return sb.toString();
     }
 
     private String buildDebateContext(List<DebateTurn> turns) {

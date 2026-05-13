@@ -82,10 +82,31 @@ public class DebateSessionService {
             List<Answer> answers = zhihuApiService.searchAnswers(session.getTopic(), 15);
             log.info("[{}] Search retrieved {} answers", sessionId, answers.size());
 
+            if (answers.isEmpty()) {
+                log.warn("[{}] No answers found — likely API rate limit exceeded", sessionId);
+                session.setStatus(DebateSession.Status.ERROR);
+                sessionRepo.save(session);
+                emitEvent(sessionId, "error", Map.of("message",
+                    "知乎搜索 API 今日调用次数已达上限，暂时无法获取内容，请明天再试"));
+                emitEvent(sessionId, "status", Map.of("status", "ERROR"));
+                return;
+            }
+
             List<StanceGroup> stances = clusteringService.cluster(session.getTopic(), answers);
             log.info("[{}] Clustering done: {} stances — {}",
                 sessionId, stances.size(),
                 stances.stream().map(StanceGroup::getLabel).toList());
+
+            if (stances.isEmpty()) {
+                log.warn("[{}] Clustering produced 0 stances", sessionId);
+                session.setStatus(DebateSession.Status.ERROR);
+                sessionRepo.save(session);
+                emitEvent(sessionId, "error", Map.of("message",
+                    "未能从搜索结果中识别出有效立场，请换一个更具争议性的话题重试"));
+                emitEvent(sessionId, "status", Map.of("status", "ERROR"));
+                return;
+            }
+
             session.setStancesJson(gson.toJson(stances));
             sessionRepo.save(session);
 

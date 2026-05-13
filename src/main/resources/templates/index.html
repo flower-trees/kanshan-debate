@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <link rel="icon" type="image/png" href="/logo.png"/>
     <title>知乎圆桌辩论 · 看山</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -279,6 +280,7 @@
     let eventSource = null;
     let summaryStreamCard = null;
     let summaryStreamText = '';
+    const accessToken = new URLSearchParams(window.location.search).get('token');
 
     function fillTopic(text) {
         document.getElementById('topicInput').value = text;
@@ -311,10 +313,12 @@
         if (eventSource) { eventSource.close(); eventSource = null; }
 
         try {
+            const payload = { topic };
+            if (accessToken) payload.token = accessToken;
             const resp = await fetch('/api/debate/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ topic })
+                body: JSON.stringify(payload)
             });
             const data = await resp.json();
             if (data.error) { alert(data.error); reset(); return; }

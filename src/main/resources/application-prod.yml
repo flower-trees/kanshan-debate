@@ -1,0 +1,3 @@
+debate:
+  db-path: /data/kanshan/debate-prod.db
+  hot-cache-dir: /data/kanshan/cache

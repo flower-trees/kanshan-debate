@@ -1,0 +1,3 @@
+debate:
+  db-path: src/main/resources/db/debate.db
+  hot-cache-dir: src/main/resources/cache

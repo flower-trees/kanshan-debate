@@ -1,10 +1,13 @@
 package com.zhihu.kanshan.debate.controller;
 
+import com.zhihu.kanshan.debate.auth.TokenCipher;
+import com.zhihu.kanshan.debate.auth.TokenUsageStore;
 import com.zhihu.kanshan.debate.model.DebateSession;
 import com.zhihu.kanshan.debate.service.DebateSessionService;
 import com.zhihu.kanshan.debate.service.ZhihuApiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -21,6 +24,10 @@ public class DebateController {
 
     private final DebateSessionService sessionService;
     private final ZhihuApiService zhihuApiService;
+    private final TokenUsageStore tokenUsageStore;
+
+    @Value("${TOKEN_SECRET:}")
+    private String tokenSecret;
 
     // ── Pages ─────────────────────────────────────────────────────────────────
 
@@ -45,8 +52,30 @@ public class DebateController {
         DebateSession session = sessionService.createSession(topic);
         log.info("Session created: id={}, status={}, topic='{}'", session.getId(), session.getStatus(), topic);
 
-        // If PENDING, kick off async execution
+        // If PENDING, kick off async execution — token check only here,
+        // because cached (COMPLETED) results don't invoke the model
         if (session.getStatus() == DebateSession.Status.PENDING) {
+            if (tokenUsageStore.isEnabled()) {
+                String token = body.get("token");
+                if (token == null || token.isBlank()) {
+                    return ResponseEntity.status(401).body(Map.of("error", "缺少访问令牌"));
+                }
+                TokenCipher.TokenPayload payload;
+                try {
+                    payload = new TokenCipher(tokenSecret).decrypt(token);
+                } catch (Exception e) {
+                    log.warn("Invalid token: {}", e.getMessage());
+                    return ResponseEntity.status(401).body(Map.of("error", "令牌无效"));
+                }
+                int used = tokenUsageStore.getCount(token);
+                if (used >= payload.limit()) {
+                    log.warn("Token limit reached: label='{}' {}/{}", payload.label(), used, payload.limit());
+                    return ResponseEntity.status(429).body(Map.of("error",
+                        "令牌「" + payload.label() + "」已用完 " + payload.limit() + " 次辩论次数，请联系管理员获取新令牌"));
+                }
+                tokenUsageStore.increment(token);
+                log.info("Token used: label='{}' {}/{}", payload.label(), used + 1, payload.limit());
+            }
             sessionService.runAsync(session.getId());
         }
 
