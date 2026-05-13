@@ -315,7 +315,7 @@
         try {
             const payload = { topic };
             if (accessToken) payload.token = accessToken;
-            const resp = await fetch('/api/debate/start', {
+            const resp = await fetch('/kanshan-debate/api/debate/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -333,7 +333,7 @@
     }
 
     function subscribeEvents(sessionId) {
-        eventSource = new EventSource(`/api/debate/${sessionId}/events`);
+        eventSource = new EventSource(`/kanshan-debate/api/debate/${sessionId}/events`);
 
         eventSource.addEventListener('status', e => {
             const d = JSON.parse(e.data);
@@ -391,7 +391,7 @@
 
     async function stopDebate() {
         if (!currentSessionId) return;
-        await fetch(`/api/debate/${currentSessionId}/stop`, { method: 'POST' });
+        await fetch(`/kanshan-debate/api/debate/${currentSessionId}/stop`, { method: 'POST' });
         setStatus(false, '已发送暂停信号');
         document.getElementById('controlBar').classList.remove('visible');
     }
