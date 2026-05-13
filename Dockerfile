@@ -14,7 +14,7 @@ ENV APP_NAME=${PARAM_APP_NAME}
 RUN echo ${APP_NAME}
 #RUN echo ${ENVIRONMENT}
 
-ADD ./${APP_NAME}-starter/target/${APP_NAME}-starter-1.0-SNAPSHOT.jar /app/${APP_NAME}-starter.jar
+ADD ./${APP_NAME}-starter/target/${APP_NAME}-1.0.0-SNAPSHOT.jar /app/${APP_NAME}.jar
 
 WORKDIR /app
 
