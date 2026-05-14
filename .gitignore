@@ -40,3 +40,6 @@ build/
 
 ### codex ###
 AGENTS.md
+
+src/main/resources/cache
+src/main/resources/db

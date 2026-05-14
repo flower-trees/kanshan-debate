@@ -84,10 +84,11 @@ public class DebateSessionService {
 
             if (answers.isEmpty()) {
                 log.warn("[{}] No answers found — likely API rate limit exceeded", sessionId);
+                String errMsg1 = "知乎搜索 API 今日调用次数已达上限，暂时无法获取内容，请明天再试";
+                session.setSummary(errMsg1);
                 session.setStatus(DebateSession.Status.ERROR);
                 sessionRepo.save(session);
-                emitEvent(sessionId, "error", Map.of("message",
-                    "知乎搜索 API 今日调用次数已达上限，暂时无法获取内容，请明天再试"));
+                emitEvent(sessionId, "error", Map.of("message", errMsg1));
                 emitEvent(sessionId, "status", Map.of("status", "ERROR"));
                 return;
             }
@@ -99,10 +100,11 @@ public class DebateSessionService {
 
             if (stances.isEmpty()) {
                 log.warn("[{}] Clustering produced 0 stances", sessionId);
+                String errMsg2 = "未能从搜索结果中识别出有效立场，请换一个更具争议性的话题重试";
+                session.setSummary(errMsg2);
                 session.setStatus(DebateSession.Status.ERROR);
                 sessionRepo.save(session);
-                emitEvent(sessionId, "error", Map.of("message",
-                    "未能从搜索结果中识别出有效立场，请换一个更具争议性的话题重试"));
+                emitEvent(sessionId, "error", Map.of("message", errMsg2));
                 emitEvent(sessionId, "status", Map.of("status", "ERROR"));
                 return;
             }
@@ -145,9 +147,12 @@ public class DebateSessionService {
         } catch (Exception e) {
             log.error("[{}] Debate failed after {}ms: {}", sessionId,
                 System.currentTimeMillis() - startMs, e.getMessage(), e);
+            String errMsg = "辩论出现错误：" + e.getMessage();
+            session.setSummary(errMsg);
             session.setStatus(DebateSession.Status.ERROR);
             sessionRepo.save(session);
-            emitEvent(sessionId, "error", Map.of("message", "辩论出现错误：" + e.getMessage()));
+            emitEvent(sessionId, "error", Map.of("message", errMsg));
+            emitEvent(sessionId, "status", Map.of("status", "ERROR"));
         } finally {
             stopSignals.remove(sessionId);
             closeEmitters(sessionId);
@@ -172,10 +177,10 @@ public class DebateSessionService {
         emitter.onTimeout(() -> removeEmitter(sessionId, emitter));
         emitter.onError(e -> removeEmitter(sessionId, emitter));
 
-        // If session already completed, replay all turns immediately
+        // If session already finished, replay immediately so late subscribers don't hang
         sessionRepo.findById(sessionId).ifPresent(session -> {
-            if (session.getStatus() == DebateSession.Status.COMPLETED) {
-                try {
+            try {
+                if (session.getStatus() == DebateSession.Status.COMPLETED) {
                     if (session.getStancesJson() != null) {
                         List<StanceGroup> stances = gson.fromJson(session.getStancesJson(),
                             new TypeToken<List<StanceGroup>>() {}.getType());
@@ -188,9 +193,14 @@ public class DebateSessionService {
                     }
                     sendEvent(emitter, "status", Map.of("status", "COMPLETED", "message", "辩论结束（来自缓存）"));
                     emitter.complete();
-                } catch (Exception e) {
-                    log.warn("Replay failed for session {}", sessionId, e);
+                } else if (session.getStatus() == DebateSession.Status.ERROR) {
+                    String msg = session.getSummary();
+                    if (msg != null) sendEvent(emitter, "error", Map.of("message", msg));
+                    sendEvent(emitter, "status", Map.of("status", "ERROR"));
+                    emitter.complete();
                 }
+            } catch (Exception e) {
+                log.warn("Replay failed for session {}", sessionId, e);
             }
         });
 

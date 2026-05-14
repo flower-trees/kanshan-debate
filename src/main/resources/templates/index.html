@@ -224,6 +224,23 @@
             cursor: pointer;
         }
         .btn-stop:hover { background: #b31412; }
+
+        /* ── Error card ── */
+        .error-card {
+            background: #fff5f5;
+            border: 1.5px solid #ffcdd2;
+            border-left: 4px solid #d93025;
+            border-radius: 10px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            animation: slideIn .3s ease;
+        }
+        .error-icon { font-size: 22px; flex-shrink: 0; }
+        .error-body { flex: 1; }
+        .error-title { font-weight: 700; font-size: 14px; color: #c62828; margin-bottom: 4px; }
+        .error-msg { font-size: 13px; line-height: 1.6; color: #555; }
     </style>
 </head>
 <body>
@@ -345,8 +362,12 @@
             };
             setStatus(d.status !== 'COMPLETED' && d.status !== 'ERROR',
                       statusMap[d.status] || d.message);
-            if (d.status === 'COMPLETED' || d.status === 'ERROR') {
-                reset(false);
+            if (d.status === 'COMPLETED') {
+                reset(true);
+                if (eventSource) { eventSource.close(); eventSource = null; }
+            } else if (d.status === 'ERROR') {
+                reset(true);
+                setStatus(false, '');
                 if (eventSource) { eventSource.close(); eventSource = null; }
             }
         });
@@ -376,9 +397,8 @@
         eventSource.addEventListener('error', e => {
             try {
                 const d = JSON.parse(e.data);
-                setStatus(false, '❌ ' + d.message);
+                renderErrorCard(d.message);
             } catch (_) {}
-            reset(false);
         });
 
         eventSource.onerror = () => {
@@ -500,6 +520,21 @@
         if (!str) return '';
         return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
                   .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    }
+
+    function renderErrorCard(message) {
+        const feed = document.getElementById('debateFeed');
+        const card = document.createElement('div');
+        card.className = 'error-card';
+        card.innerHTML = `
+            <div class="error-icon">⚠️</div>
+            <div class="error-body">
+                <div class="error-title">无法完成辩论</div>
+                <div class="error-msg">${escHtml(message)}</div>
+            </div>
+        `;
+        feed.appendChild(card);
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     // Allow Enter key to start
