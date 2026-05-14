@@ -200,7 +200,7 @@ public class DebateOrchestrator {
     private String invokeSpeech(String prompt, long t0, String debaterName, SpeechType type) {
         FlowInstance chain = chainActor.builder()
             .next(PromptTemplate.fromTemplate("${prompt}"))
-            .next(ChatAliyun.builder().model("qwen3.5-flash").temperature(0.7f).build())
+            .next(ChatAliyun.builder().model("qwen3.5-flash-2026-02-23").temperature(0.7f).modelKwargs(Map.of("enable_thinking", false)).build())
             .next(new StrOutputParser())
             .build();
         ChatGeneration result = chainActor.invoke(chain, Map.of("prompt", prompt));
@@ -347,7 +347,7 @@ public class DebateOrchestrator {
                 3. 给读者一个思考框架，而不是结论
                 4. 结尾提示「各论点均来自知乎真实答主」
                 """))
-            .next(ChatAliyun.builder().model("qwen3.5-flash").temperature(0.3f).build())
+            .next(ChatAliyun.builder().model("qwen3.5-flash-2026-02-23").temperature(0.3f).modelKwargs(Map.of("enable_thinking", false)).build())
             .next(new StrOutputParser())
             .build();
 

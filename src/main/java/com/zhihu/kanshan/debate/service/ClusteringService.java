@@ -45,7 +45,7 @@ public class ClusteringService {
 
         FlowInstance clusterChain = chainActor.builder()
             .next(PromptTemplate.fromTemplate(CLUSTER_PROMPT))
-            .next(ChatAliyun.builder().model("qwen3.5-flash").temperature(0.1f).build())
+            .next(ChatAliyun.builder().model("qwen3.5-flash-2026-02-23").temperature(0.1f).modelKwargs(Map.of("enable_thinking", false)).build())
             .next(new StrOutputParser())
             .build();
 
