@@ -15,6 +15,8 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import jakarta.servlet.http.HttpServletResponse;
+
 import java.util.Map;
 
 @Slf4j
@@ -87,9 +89,11 @@ public class DebateController {
 
     @GetMapping(value = "/api/debate/{sessionId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @ResponseBody
-    public SseEmitter streamEvents(@PathVariable String sessionId) {
+    public ResponseEntity<SseEmitter> streamEvents(@PathVariable String sessionId,
+                                                   HttpServletResponse response) {
         log.debug("SSE subscribe: sessionId={}", sessionId);
-        return sessionService.subscribe(sessionId);
+        response.setHeader("X-Accel-Buffering", "no");
+        return ResponseEntity.ok(sessionService.subscribe(sessionId));
     }
 
     @PostMapping("/api/debate/{sessionId}/stop")
